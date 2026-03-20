@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { PlusCircle, Trash2, CheckCircle2, BookOpen, GraduationCap } from 'lucide-react';
 
 const groupBy = (array, keyFn) => {
@@ -13,22 +13,44 @@ const groupBy = (array, keyFn) => {
 };
 
 const INITIAL_MODULES = [
-  { id: '1', name: 'Software Engineering', credits: 6, semester: 'Semester 1', container: 'Mandatory', status: 'Completed' },
-  { id: '2', name: 'Databases', credits: 6, semester: 'Semester 1', container: 'Mandatory', status: 'Completed' },
-  { id: '3', name: 'Machine Learning', credits: 6, semester: 'Semester 2', container: 'Specialization', status: 'In Progress' },
-  { id: '4', name: 'Web Development', credits: 6, semester: 'Semester 2', container: 'Elective', status: 'Planned' }
+
 ];
 
-const SEMESTERS = ['Semester 1', 'Semester 2', 'Semester 3', 'Semester 4', 'Semester 5', 'Semester 6'];
-const CONTAINERS = ['Mandatory', 'Elective', 'Specialization'];
+const SEMESTERS = ['Semester 1', 'Semester 2', 'Semester 3', 'Semester 4', 'Semester 5'];
+const CONTAINERS = ['Auflagen', 'Grundlagen IA', 'Ringvorlesung AS', 'Schwerpunkt Lernen', 'Schwerpunkt Planen', 'Schwerpunkt Perzeption',
+  'Anwendungsfach', 'Projektarbeit', 'Masterarbeit'];
 const STATUSES = ['Planned', 'In Progress', 'Completed'];
 
 export default function StudyPlaner() {
-  const [modules, setModules] = useState(INITIAL_MODULES);
+  const [modules, setModules] = useState(() => {
+    const saved = localStorage.getItem('studyPlannerModules');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return INITIAL_MODULES;
+      }
+    }
+    return INITIAL_MODULES;
+  });
   const [isFormOpen, setIsFormOpen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('studyPlannerModules', JSON.stringify(modules));
+  }, [modules]);
 
   const modulesBySemester = useMemo(() => groupBy(modules, m => m.semester), [modules]);
   const modulesByContainer = useMemo(() => groupBy(modules, m => m.container), [modules]);
+
+  const totalRequiredCredits = 120;
+  const totalEarnedCredits = modules
+    .filter(m => m.container !== 'Auflagen' && m.status === 'Completed')
+    .reduce((sum, m) => sum + m.credits, 0);
+  const totalPlannedCredits = modules
+    .filter(m => m.container !== 'Auflagen' && m.status !== 'Completed')
+    .reduce((sum, m) => sum + m.credits, 0);
+  const totalEarnedPercentage = Math.min((totalEarnedCredits / totalRequiredCredits) * 100, 100);
+  const totalPlannedPercentage = Math.min((totalPlannedCredits / totalRequiredCredits) * 100, 100 - totalEarnedPercentage);
 
   const addModule = (newModule) => {
     setModules([...modules, { id: Date.now().toString(), ...newModule }]);
@@ -58,13 +80,28 @@ export default function StudyPlaner() {
       <header className="app-header">
         <div className="logo">
           <GraduationCap size={40} className="logo-icon" />
-          <h1>Study Planner</h1>
+          <h1>Study Planner - Autonomous Systems</h1>
         </div>
         <button className="primary-btn" onClick={() => setIsFormOpen(true)}>
           <PlusCircle size={20} />
           <span>Add Module</span>
         </button>
       </header>
+
+      <div className="overall-progress-section">
+        <div className="op-header">
+          <h2>Degree Progress</h2>
+          <span className="fraction">{totalEarnedCredits} / {totalRequiredCredits} CP</span>
+        </div>
+        <div className="progress-bar-large">
+          <div className="progress-fill earned" style={{ width: `${totalEarnedPercentage}%` }} />
+          <div className="progress-fill planned" style={{ width: `${totalPlannedPercentage}%` }} />
+        </div>
+        <div className="op-legend">
+          <span><span className="dot earned" /> Completed ({totalEarnedCredits} CP)</span>
+          <span><span className="dot planned" /> Planned/In Progress ({totalPlannedCredits} CP)</span>
+        </div>
+      </div>
 
       {isFormOpen && (
         <ModuleModal onClose={() => setIsFormOpen(false)} onAdd={addModule} />
@@ -90,9 +127,15 @@ export default function StudyPlaner() {
 
         <aside className="analytics-section">
           <h2>Degree Requirements</h2>
-          <ContainerAnalytics title="Mandatory Modules" modules={modulesByContainer['Mandatory'] || []} requiredCredits={60} />
-          <ContainerAnalytics title="Electives" modules={modulesByContainer['Elective'] || []} requiredCredits={30} />
-          <ContainerAnalytics title="Specialization" modules={modulesByContainer['Specialization'] || []} requiredCredits={30} />
+          <ContainerAnalytics title="Auflagen" modules={modulesByContainer['Auflagen'] || []} requiredCredits={6} />
+          <ContainerAnalytics title="Grundlagen IA" modules={modulesByContainer['Grundlagen IA'] || []} requiredCredits={18} />
+          <ContainerAnalytics title="Ringvorlesung AS" modules={modulesByContainer['Ringvorlesung AS'] || []} requiredCredits={6} />
+          <ContainerAnalytics title="Schwerpunkt Lernen" modules={modulesByContainer['Schwerpunkt Lernen'] || []} requiredCredits={6} />
+          <ContainerAnalytics title="Schwerpunkt Planen" modules={modulesByContainer['Schwerpunkt Planen'] || []} requiredCredits={6} />
+          <ContainerAnalytics title="Schwerpunkt Perzeption" modules={modulesByContainer['Schwerpunkt Perzeption'] || []} requiredCredits={6} />
+          <ContainerAnalytics title="Anwendungsfach" modules={modulesByContainer['Anwendungsfach'] || []} requiredCredits={12} />
+          <ContainerAnalytics title="Projektarbeit" modules={modulesByContainer['Projektarbeit'] || []} requiredCredits={12} />
+          <ContainerAnalytics title="Masterarbeit" modules={modulesByContainer['Masterarbeit'] || []} requiredCredits={30} />
         </aside>
       </main>
     </div>
@@ -101,7 +144,7 @@ export default function StudyPlaner() {
 
 function SemesterColumn({ title, modules, onMove, onDelete, onToggleStatus, allSemesters }) {
   const credits = modules.reduce((sum, m) => sum + m.credits, 0);
-  
+
   return (
     <div className="semester-col">
       <div className="semester-header">
@@ -113,8 +156,8 @@ function SemesterColumn({ title, modules, onMove, onDelete, onToggleStatus, allS
           <div key={module.id} className={`module-card status-${module.status.toLowerCase().replace(' ', '-')}`}>
             <div className="module-header">
               <h4>{module.name}</h4>
-              <button 
-                className="status-toggle" 
+              <button
+                className="status-toggle"
                 onClick={() => onToggleStatus(module.id)}
                 title={`Status: ${module.status}. Click to change.`}
               >
@@ -128,8 +171,8 @@ function SemesterColumn({ title, modules, onMove, onDelete, onToggleStatus, allS
               <span className="tag-credits">{module.credits} CP</span>
             </div>
             <div className="module-actions">
-              <select 
-                value={module.semester} 
+              <select
+                value={module.semester}
                 onChange={(e) => onMove(module.id, e.target.value)}
                 className="semester-select"
               >
@@ -152,7 +195,7 @@ function SemesterColumn({ title, modules, onMove, onDelete, onToggleStatus, allS
 function ContainerAnalytics({ title, modules, requiredCredits }) {
   const earnedCredits = modules.filter(m => m.status === 'Completed').reduce((sum, m) => sum + m.credits, 0);
   const plannedCredits = modules.filter(m => m.status !== 'Completed').reduce((sum, m) => sum + m.credits, 0);
-  
+
   const earnedPercentage = Math.min((earnedCredits / requiredCredits) * 100, 100);
   const plannedPercentage = Math.min((plannedCredits / requiredCredits) * 100, 100 - earnedPercentage);
 
