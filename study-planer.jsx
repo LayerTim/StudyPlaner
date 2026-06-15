@@ -78,7 +78,25 @@ const isValidCredits = (value) => {
   return Number.isFinite(parsed) && parsed > 0 && parsed <= 30;
 };
 
-const isValidGrade = (value) => value === '' || VALID_GRADES.includes(String(value).replace(',', '.').trim());
+const normalizeGradeValue = (value) => {
+  const normalizedValue = String(value).replace(',', '.').trim();
+  if (normalizedValue === '') {
+    return '';
+  }
+
+  const numericValue = Number(normalizedValue);
+  if (!Number.isFinite(numericValue)) {
+    return normalizedValue;
+  }
+
+  return VALID_GRADES.find((grade) => Number(grade) === numericValue) ?? normalizedValue;
+};
+
+const isValidGrade = (value) => {
+  const normalizedGrade = normalizeGradeValue(value);
+  return normalizedGrade === '' || VALID_GRADES.includes(normalizedGrade);
+};
+const formatGrade = (value) => normalizeGradeValue(value);
 
 const normalizeRequirements = (savedRequirements) => {
   if (!Array.isArray(savedRequirements) || savedRequirements.length === 0) {
@@ -513,7 +531,7 @@ export default function StudyPlaner() {
   };
 
   const updateGrade = (moduleId, newGrade) => {
-    const normalizedGrade = String(newGrade).replace(',', '.').trim();
+    const normalizedGrade = normalizeGradeValue(newGrade);
     if (!isValidGrade(normalizedGrade)) {
       window.alert(`Please use a valid grade: ${VALID_GRADES.join(', ')}`);
       return;
@@ -1233,13 +1251,13 @@ function SemesterColumn({
                 {module.status === 'Completed' && (
                   <InlineEditable
                     className="tag-grade inline-chip-edit"
-                    value={module.grade === '' || module.grade == null ? '' : String(module.grade)}
+                    value={module.grade === '' || module.grade == null ? '' : formatGrade(module.grade)}
                     inputMode="decimal"
                     placeholder="1.7"
                     onSave={(newGrade) => onUpdateGrade(module.id, newGrade)}
                   >
                     <span className={`tag-grade ${module.grade === '' || module.grade == null ? 'empty' : ''}`}>
-                      {module.grade === '' || module.grade == null ? 'Grade' : `Grade: ${module.grade}`}
+                      {module.grade === '' || module.grade == null ? 'Grade' : `Grade: ${formatGrade(module.grade)}`}
                     </span>
                   </InlineEditable>
                 )}
