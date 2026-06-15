@@ -121,6 +121,219 @@ button {
   display: none;
 }
 
+.cloud-panel {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 2rem;
+  padding: 1.25rem 1.4rem;
+  background: linear-gradient(135deg, rgba(26, 31, 46, 0.96), rgba(20, 24, 38, 0.92));
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: -70px;
+    right: -40px;
+    width: 190px;
+    height: 190px;
+    border-radius: 50%;
+    background: rgba(129, 140, 248, 0.1);
+    filter: blur(4px);
+    pointer-events: none;
+  }
+
+  &.is-connected {
+    border-color: rgba(16, 185, 129, 0.28);
+
+    &::after {
+      background: rgba(16, 185, 129, 0.08);
+    }
+
+    .cloud-icon {
+      color: #6ee7b7;
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.2);
+    }
+  }
+}
+
+.cloud-panel-content {
+  position: relative;
+  z-index: 1;
+}
+
+.cloud-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+
+  h2 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+
+  p {
+    margin: 0.4rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    line-height: 1.5;
+  }
+}
+
+.cloud-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  color: #a5b4fc;
+  background: rgba(129, 140, 248, 0.12);
+  border: 1px solid rgba(129, 140, 248, 0.2);
+  border-radius: 11px;
+}
+
+.cloud-eyebrow {
+  display: block;
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.google-login-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0 0 3.3rem;
+
+  > span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+  }
+}
+
+.cloud-logout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.72rem 1rem;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.google-button-slot {
+  width: 230px;
+  min-height: 40px;
+  flex: 0 0 auto;
+}
+
+.auth-feedback {
+  margin: 0.8rem 0 0 3.3rem;
+  font-size: 0.85rem;
+
+  &.is-success {
+    color: #6ee7b7;
+  }
+
+  &.is-error {
+    color: #fca5a5;
+  }
+}
+
+.cloud-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1rem 0 0 3.3rem;
+}
+
+.cloud-account-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  color: var(--text-main);
+  font-size: 0.88rem;
+
+  > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.save-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+
+  &.has-error {
+    color: #fca5a5;
+
+    .save-status-dot {
+      background: var(--danger);
+    }
+  }
+
+  &.is-saving .save-status-dot {
+    animation: savePulse 1.2s ease-in-out infinite;
+  }
+}
+
+.save-status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+
+.cloud-logout-btn {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--surface-border);
+
+  &:hover {
+    color: var(--text-main);
+    border-color: rgba(148, 163, 184, 0.45);
+    background: rgba(255, 255, 255, 0.07);
+  }
+}
+
+@keyframes savePulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+@media (max-width: 680px) {
+  .google-login-actions,
+  .cloud-account {
+    flex-direction: column;
+    align-items: stretch;
+    margin-left: 0;
+  }
+
+  .auth-feedback {
+    margin-left: 0;
+  }
+
+  .cloud-logout-btn {
+    align-self: flex-start;
+  }
+}
+
 .overall-progress-section {
   background: var(--surface-color);
   border: 1px solid var(--surface-border);

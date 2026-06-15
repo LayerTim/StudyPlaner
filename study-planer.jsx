@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
-import { Trash2, CheckCircle2, BookOpen, GraduationCap, Eye, EyeOff } from 'lucide-react';
+import { Trash2, CheckCircle2, BookOpen, GraduationCap, Eye, EyeOff, Cloud, LogOut } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 const groupBy = (array, keyFn) => {
@@ -43,6 +43,18 @@ const DEFAULT_CREDITS_BY_CONTAINER = {
 const defaultContainerTitles = DEFAULT_REQUIREMENTS.map((requirement) => requirement.title);
 
 const getDefaultCreditsForContainer = (container) => DEFAULT_CREDITS_BY_CONTAINER[container] ?? 6;
+
+const createGoogleNonce = async () => {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+  const nonce = btoa(String.fromCharCode(...randomBytes));
+  const encodedNonce = new TextEncoder().encode(nonce);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encodedNonce);
+  const hashedNonce = Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+
+  return { nonce, hashedNonce };
+};
 
 const normalizeSemesterList = (semesterList) => {
   if (!Array.isArray(semesterList) || semesterList.length === 0) {
@@ -224,17 +236,22 @@ export default function StudyPlaner() {
   const [draggedRequirementId, setDraggedRequirementId] = useState(null);
   const [requirementDropTarget, setRequirementDropTarget] = useState(null);
   const [session, setSession] = useState(null);
-  const [authEmail, setAuthEmail] = useState('');
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [authFeedback, setAuthFeedback] = useState(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [initialSyncDone, setInitialSyncDone] = useState(false);
   const fileInputRef = useRef(null);
+  const googleButtonRef = useRef(null);
+  const googleNonceRef = useRef(null);
   const previousModulePositionsRef = useRef(new Map());
   const previousRequirementPositionsRef = useRef(new Map());
   const historyRef = useRef([]);
   const currentSnapshotRef = useRef(null);
   const isRestoringHistoryRef = useRef(false);
+  const lastCloudPayloadRef = useRef(null);
 
   const containerTitles = useMemo(() => requirements.map((requirement) => requirement.title), [requirements]);
 
@@ -553,31 +570,105 @@ export default function StudyPlaner() {
     }
   };
 
-  const handleSendMagicLink = async (event) => {
-    event.preventDefault();
-    if (!authEmail) {
-      return;
-    }
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: authEmail,
-        options: {
-          emailRedirectTo: new URL(import.meta.env.BASE_URL, window.location.href).href,
-        },
-      });
-      if (error) {
-        throw error;
-      }
-      window.alert('Check deine E-Mails fuer den Login-Link.');
-    } catch (error) {
-      window.alert(error.message ?? 'Login fehlgeschlagen.');
-    }
+  const handleLogout = async () => {
+    window.google?.accounts?.id?.disableAutoSelect();
+    await supabase.auth.signOut();
+    setIsSigningIn(false);
+    setAuthFeedback(null);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setAuthEmail('');
-  };
+  useEffect(() => {
+    if (!isAuthReady || session) {
+      return undefined;
+    }
+
+    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!googleClientId) {
+      setAuthFeedback({
+        type: 'error',
+        message: 'Google Login ist noch nicht konfiguriert.',
+      });
+      return undefined;
+    }
+
+    let canceled = false;
+    let buttonContainer = null;
+    const scriptSource = 'https://accounts.google.com/gsi/client';
+
+    const initializeGoogleButton = async () => {
+      if (canceled || !window.google || !googleButtonRef.current) {
+        return;
+      }
+
+      const { nonce, hashedNonce } = await createGoogleNonce();
+      if (canceled || !googleButtonRef.current) {
+        return;
+      }
+
+      googleNonceRef.current = nonce;
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        nonce: hashedNonce,
+        use_fedcm_for_prompt: true,
+        callback: async (response) => {
+          setIsSigningIn(true);
+          setAuthFeedback(null);
+          const { error } = await supabase.auth.signInWithIdToken({
+            provider: 'google',
+            token: response.credential,
+            nonce: googleNonceRef.current,
+          });
+
+          if (error) {
+            setAuthFeedback({
+              type: 'error',
+              message: error.message ?? 'Die Google-Anmeldung ist fehlgeschlagen.',
+            });
+            setIsSigningIn(false);
+          }
+        },
+      });
+
+      buttonContainer = googleButtonRef.current;
+      buttonContainer.replaceChildren();
+      window.google.accounts.id.renderButton(buttonContainer, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: 'signin_with',
+        shape: 'rectangular',
+        logo_alignment: 'left',
+        width: 230,
+      });
+    };
+
+    const existingScript = document.querySelector(`script[src="${scriptSource}"]`);
+    if (window.google) {
+      initializeGoogleButton();
+    } else if (existingScript) {
+      existingScript.addEventListener('load', initializeGoogleButton, { once: true });
+    } else {
+      const script = document.createElement('script');
+      script.src = scriptSource;
+      script.async = true;
+      script.addEventListener('load', initializeGoogleButton, { once: true });
+      script.addEventListener('error', () => {
+        if (!canceled) {
+          setAuthFeedback({
+            type: 'error',
+            message: 'Google Login konnte nicht geladen werden.',
+          });
+        }
+      }, { once: true });
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      canceled = true;
+      existingScript?.removeEventListener('load', initializeGoogleButton);
+      buttonContainer?.replaceChildren();
+    };
+  }, [isAuthReady, session]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -605,11 +696,15 @@ export default function StudyPlaner() {
     supabase.auth.getSession().then(({ data }) => {
       if (mounted) {
         setSession(data.session ?? null);
+        setIsSigningIn(false);
+        setIsAuthReady(true);
       }
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession ?? null);
+      setIsSigningIn(false);
+      setIsAuthReady(true);
     });
 
     return () => {
@@ -623,6 +718,8 @@ export default function StudyPlaner() {
       setInitialSyncDone(false);
       setSyncError(null);
       setIsSyncing(false);
+      setLastSavedAt(null);
+      lastCloudPayloadRef.current = null;
       return;
     }
 
@@ -655,11 +752,18 @@ export default function StudyPlaner() {
           nextSemesters,
           nextRequirements.map((requirement) => requirement.title),
         );
-        setPlannerTitle(typeof payload.plannerTitle === 'string' && payload.plannerTitle.trim() ? payload.plannerTitle.trim() : DEFAULT_TITLE);
+        const nextPlannerTitle = typeof payload.plannerTitle === 'string' && payload.plannerTitle.trim() ? payload.plannerTitle.trim() : DEFAULT_TITLE;
+        setPlannerTitle(nextPlannerTitle);
         setRequirements(nextRequirements);
         setSemesters(nextSemesters);
         setModules(nextModules);
         setLastSavedAt(data.updated_at ?? null);
+        lastCloudPayloadRef.current = JSON.stringify({
+          plannerTitle: nextPlannerTitle,
+          semesters: nextSemesters,
+          requirements: nextRequirements,
+          modules: nextModules,
+        });
       }
 
       setInitialSyncDone(true);
@@ -682,6 +786,11 @@ export default function StudyPlaner() {
       requirements,
       modules,
     };
+    const serializedPayload = JSON.stringify(payload);
+
+    if (serializedPayload === lastCloudPayloadRef.current) {
+      return;
+    }
 
     const timeoutId = setTimeout(async () => {
       setIsSyncing(true);
@@ -702,8 +811,9 @@ export default function StudyPlaner() {
         setSyncError('Speichern fehlgeschlagen. Aenderungen bleiben lokal erhalten.');
         return;
       }
+      lastCloudPayloadRef.current = serializedPayload;
       setLastSavedAt(data.updated_at);
-    }, 800);
+    }, 1500);
 
     return () => {
       clearTimeout(timeoutId);
@@ -761,42 +871,67 @@ export default function StudyPlaner() {
         </div>
       </header>
 
-      <section className="auth-panel">
-        {session ? (
-          <div className="auth-panel-signed-in">
-            <div className="auth-panel-row">
-              <span>Angemeldet als {session.user?.email ?? session.user?.id}</span>
-              <button type="button" className="secondary-btn" onClick={handleLogout}>Logout</button>
+      <section className={`cloud-panel ${session ? 'is-connected' : ''}`}>
+        {!isAuthReady ? (
+          <div key="auth-loading" className="cloud-panel-content">
+            <div className="cloud-panel-heading">
+              <div className="cloud-icon"><Cloud size={22} /></div>
+              <div>
+                <span className="cloud-eyebrow">Cloud-Sicherung</span>
+                <h2>Anmeldung wird geprüft ...</h2>
+              </div>
             </div>
-            <div className="auth-panel-row">
-              <span>
-                {isSyncing
-                  ? 'Speichere in Supabase ...'
-                  : lastSavedAt
-                    ? `Zuletzt gespeichert: ${new Date(lastSavedAt).toLocaleString('de-DE', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })}`
-                    : 'Cloud-Sync noch nicht gestartet'}
-              </span>
-              {syncError && <span className="sync-error">{syncError}</span>}
+          </div>
+        ) : session ? (
+          <div key="signed-in" className="cloud-panel-content">
+            <div className="cloud-panel-heading">
+              <div className="cloud-icon"><Cloud size={22} /></div>
+              <div>
+                <span className="cloud-eyebrow">Cloud-Sicherung aktiv</span>
+                <h2>Dein Plan wird automatisch gespeichert</h2>
+              </div>
+            </div>
+            <div className="cloud-account">
+              <div className="cloud-account-details">
+                <span>{session.user?.email ?? session.user?.id}</span>
+                <span className={`save-status ${isSyncing ? 'is-saving' : ''} ${syncError ? 'has-error' : ''}`}>
+                  <span className="save-status-dot" aria-hidden="true" />
+                  {syncError
+                    ? syncError
+                    : lastSavedAt
+                      ? `Zuletzt gespeichert: ${new Date(lastSavedAt).toLocaleString('de-DE', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}`
+                      : 'Cloud-Speicherung wird eingerichtet'}
+                </span>
+              </div>
+              <button type="button" className="cloud-logout-btn" onClick={handleLogout}>
+                <LogOut size={17} />
+                Abmelden
+              </button>
             </div>
           </div>
         ) : (
-          <form className="auth-panel-form" onSubmit={handleSendMagicLink}>
-            <label className="auth-panel-label">
-              Login-Link per E-Mail
-              <input
-                type="email"
-                value={authEmail}
-                onChange={(event) => setAuthEmail(event.target.value)}
-                placeholder="name@example.com"
-                required
-              />
-            </label>
-            <p className="auth-panel-hint">Wir senden dir einen Magic Link von Supabase. Öffne ihn auf diesem Gerät, um deinen Plan zu laden.</p>
-            <button type="submit" className="secondary-btn">Link senden</button>
-          </form>
+          <div key="signed-out" className="cloud-panel-content">
+            <div className="cloud-panel-heading">
+              <div className="cloud-icon"><Cloud size={22} /></div>
+              <div>
+                <span className="cloud-eyebrow">Optional anmelden</span>
+                <h2>Plan geräteübergreifend sichern</h2>
+                <p>Melde dich mit deinem Google-Konto an. Kein zusätzliches Passwort nötig.</p>
+              </div>
+            </div>
+            <div className="google-login-actions">
+              <div ref={googleButtonRef} className="google-button-slot" />
+              <span>{isSigningIn ? 'Anmeldung wird abgeschlossen ...' : 'Dein Plan bleibt auch lokal auf diesem Gerät gespeichert.'}</span>
+            </div>
+            {authFeedback && (
+              <p className={`auth-feedback is-${authFeedback.type}`} role="status">
+                {authFeedback.message}
+              </p>
+            )}
+          </div>
         )}
       </section>
 
